@@ -9,44 +9,48 @@ from typing import Optional
 load_dotenv()
 
 class Settings(BaseSettings):
-    # Core API Settings
+
     API_PORT: int = 8000
     API_HOST: str = "0.0.0.0"
 
-    # Firebase & Google Settings (Updated to match your .env file keys)
-    # The error showed these specific keys were present in your environment
-    FIREBASE_SERVICE_ACCOUNT_KEY: Optional[str] = None 
-    GOOGLE_MAPS_SERVER_API_KEY: Optional[str] = None
-    
-    # Payment Settings
-    STRIPE_SECRET_KEY: Optional[str] = None
-    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    FIREBASE_SERVICE_ACCOUNT_KEY: Optional[str] = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY")
+    GOOGLE_MAPS_SERVER_API_KEY: Optional[str] = os.getenv("GOOGLE_MAPS_SERVER_API_KEY")
 
-    # Configuration to handle .env file loading and ignore extra variables
+    # PayPal
+    PAYPAL_CLIENT_ID: Optional[str] = None
+    PAYPAL_CLIENT_SECRET: Optional[str] = None
+    PAYPAL_MODE: str = "sandbox" # 'sandbox' or 'live'
+
+    # Flutterwave
+    FLUTTERWAVE_PUBLIC_KEY: Optional[str] = None
+    FLUTTERWAVE_SECRET_KEY: Optional[str] = None
+    FLUTTERWAVE_SECRET_HASH: Optional[str] = None # For webhook signature verification
+    FLUTTERWAVE_BASE_URL: str = "https://api.flutterwave.com/v3"
+
+    @property
+    def PAYPAL_BASE_URL(self):
+        return "https://api-m.paypal.com" if self.PAYPAL_MODE == "live" else "https://api-m.sandbox.paypal.com"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore",  # This prevents crashes if .env has extra variables
+        extra="ignore",
         case_sensitive=False
     )
 
 settings = Settings()
 db: Optional[Client] = None
 
-# --- Firebase Initialization Logic ---
 try:
-    # We check the updated variable name here
     key_path = settings.FIREBASE_SERVICE_ACCOUNT_KEY
-    
     if key_path:
-        # Check if the file actually exists before trying to load it
         if os.path.exists(key_path):
             cred = credentials.Certificate(key_path)
             try:
                 firebase_admin.get_app()
             except ValueError:
                 firebase_admin.initialize_app(cred)
-            
+
             db = firestore.client()
             print("Firebase Admin SDK initialized successfully.")
         else:

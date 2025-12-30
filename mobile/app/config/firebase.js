@@ -1,11 +1,7 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { initializeApp, getApp, getApps } from "firebase/app";
+import { initializeAuth, getReactNativePersistence, getAuth } from "firebase/auth";
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBv5a-ttiM69ivcCgCN8WKdz5MMp2_U2Iw",
   authDomain: "foodaid-9d265.firebaseapp.com",
@@ -16,6 +12,20 @@ const firebaseConfig = {
   measurementId: "G-WKTXH4CKZL"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+// Initialize App (prevent duplicate initialization on hot reload)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+let auth;
+
+try {
+  // Attempt to initialize Auth with React Native persistence
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+  });
+} catch (error) {
+  // If Auth is already initialized (e.g., during hot reloads), use the existing instance
+  auth = getAuth(app);
+}
+
+// Named export to match 'import { auth }' in your hooks
+export { auth };

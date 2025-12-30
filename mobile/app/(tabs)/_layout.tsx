@@ -1,67 +1,119 @@
-
 import React from 'react';
 import { Tabs, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { ActivityIndicator, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // Assuming you have this installed
+import { Ionicons } from '@expo/vector-icons';
+import { Role } from '@/types/api';
 
 /**
- * Layout for the main app (tabs).
- * Redirects to the login screen if the user is not authenticated.
+ * Navigation Bar Layout
+ * Implements role-based tabs:
+ * Donor: Home, Explore, Create, Messages, Menu
+ * Receiver: Home, Explore, Reservations, Messages, Menu
  */
 export default function TabsLayout() {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    // Show a loading indicator while checking auth state
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
+      <View className="flex-1 justify-center items-center bg-white">
+        <ActivityIndicator size="large" color="#166534" />
       </View>
     );
   }
 
   if (!user) {
-    // User is not logged in, redirect them to the login screen
     return <Redirect href="/login" />;
   }
 
-  // User is logged in, show the tabs
   return (
-    <Tabs>
+    <Tabs
+      screenOptions={{
+        headerShown: true,
+        headerTintColor: '#166534', // green-800
+        tabBarActiveTintColor: '#EA580C', // orange-600
+        tabBarInactiveTintColor: '#6B7280', // gray-500
+        tabBarStyle: {
+          backgroundColor: 'white',
+          borderTopWidth: 1,
+          borderTopColor: '#E5E7EB',
+          paddingBottom: 5,
+          height: 60,
+        },
+      }}
+    >
+      {/* Home / Feed - Available for all */}
       <Tabs.Screen
         name="feed"
         options={{
-          title: 'Feed',
-          tabBarIcon: ({ color, size }) => <Ionicons name="fast-food-outline" size={size} color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
       />
+
+      {/* Explore / Map - Available for all */}
+      <Tabs.Screen
+        name="explore" // Needs to be created
+        options={{
+          title: 'Explore',
+          tabBarIcon: ({ color, size }) => <Ionicons name="map" size={size} color={color} />,
+        }}
+      />
+
+      {/* Create Post - Donor Only */}
       <Tabs.Screen
         name="create"
         options={{
-          title: 'New Post',
-          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle-outline" size={size} color={color} />,
+          title: 'Post Food',
+          href: user.role === Role.DONOR ? '/create' : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={32} color={color} />,
         }}
       />
+
+      {/* Reserved Posts - Receiver Only */}
       <Tabs.Screen
         name="reservations"
         options={{
-          title: 'My Reservations',
-          tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" size={size} color={color} />,
+          title: 'Reserved',
+          href: user.role === Role.RECEIVER ? '/reservations' : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="bag-check" size={size} color={color} />,
         }}
       />
+
+      {/* Logistics Dashboard - Driver Only (Replaces Feed/Reservations ideally, but keeping simple for now) */}
+      <Tabs.Screen
+        name="logistics" // Needs to be created
+        options={{
+          title: 'Jobs',
+          href: user.role === Role.LOGISTICS ? '/logistics' : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="bicycle" size={size} color={color} />,
+        }}
+      />
+
+      {/* My Posts - Donor Only (Hidden from main bar, accessed via Menu usually, but here for now) */}
       <Tabs.Screen
         name="posts"
         options={{
           title: 'My Posts',
-          tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
+          href: null, // Hidden from tab bar, accessed via Profile? Or keep if needed.
         }}
       />
+
+      {/* Messages - All */}
+      <Tabs.Screen
+        name="messages" // Needs to be created
+        options={{
+          title: 'Messages',
+          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color} />,
+        }}
+      />
+
+      {/* Menu / Profile - All */}
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-circle-outline" size={size} color={color} />,
+          title: 'Menu',
+          tabBarIcon: ({ color, size }) => <Ionicons name="menu" size={size} color={color} />,
         }}
       />
     </Tabs>

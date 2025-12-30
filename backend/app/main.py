@@ -3,7 +3,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, posts, reservations
+from app.routers import (
+    auth, posts, reservations, admin, 
+    notifications, payments, logistics
+)
 
 app = FastAPI(
     title="FoodAid API",
@@ -15,30 +18,41 @@ origins = [
     "http://localhost",
     "http://localhost:8081", # Default Expo Go port
     "exp://*", # Allow connections from Expo Go
-    # Add your production frontend URLs here
+    "*" # Allow all for dev/testing ease
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods (GET, POST, PUT, etc.)
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
 
-# --- Include API Routers ---
+# --- Register Routers ---
 app.include_router(auth.router, prefix="/auth", tags=["Authentication & Users"])
 app.include_router(posts.router, prefix="/posts", tags=["Food Posts"])
 app.include_router(reservations.router, prefix="/reservations", tags=["Reservations"])
-# We will add routers for Admin, Notifications, and Payments in the next batches.
-# app.include_router(admin.router, prefix="/admin", tags=["Admin"])
-# app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
-# app.include_router(payments.router, prefix="/payments", tags=["Payments"])
-# ---------------------------
+app.include_router(logistics.router, prefix="/logistics", tags=["Logistics & Delivery"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin Control"])
+app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+app.include_router(payments.router, prefix="/payments", tags=["Donations & Payments"])
+
 
 @app.get("/", tags=["Root"])
 async def read_root():
-    return {"message": "Welcome to the FoodAid API!"}
+    return {
+        "message": "Welcome to the FoodAid API!", 
+        "status": "online",
+        "docs": "/docs"
+    }
+
+@app.get("/admin", tags=["Admin"])
+async def read_admin():
+    return {
+        "message": "Admin endpoint is accessible.",
+        "status": "online"
+    }
 
 if __name__ == "__main__":
     uvicorn.run(

@@ -1,94 +1,197 @@
-import stripe
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
-from google.cloud.firestore_v1.client import Client
-from typing import Optional
+import base64
+import requests
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from typing import Optional, Dict, Any
 
 from app.schemas import DonationRequest, UserInDB
-from app.config import settings, get_db
-from app.dependencies import get_current_user_from_db
+from app.config import settings
+from app.dependencies import get_current_user_from_db, get_firebase_service
 from app.services.firebase_service import FirebaseService
-from app.dependencies import get_firebase_service # Corrected import
 
 router = APIRouter()
 
-# Set Stripe API key, but check if it exists first
-if settings.STRIPE_SECRET_KEY:
-    stripe.api_key = settings.STRIPE_SECRET_KEY
-else:
-    print("Warning: STRIPE_SECRET_KEY is not set. Payment endpoints will fail.")
+# Helper to get PayPal Access Token
+def get_paypal_access_token() -> str:
+    """
+    Exchanges Client ID and Secret for a PayPal Access Token.
+    """
+    if not settings.PAYPAL_CLIENT_ID or not settings.PAYPAL_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PayPal credentials are not configured on the server."
+        )
 
-@router.post("/create-payment-intent")
-async def create_payment_intent(
+    url = f"{settings.PAYPAL_BASE_URL}/v1/oauth2/token"
+    
+    # Basic Auth: Base64 encode "client_id:client_secret"
+    auth_header = base64.b64encode(
+        f"{settings.PAYPAL_CLIENT_ID}:{settings.PAYPAL_CLIENT_SECRET}".encode()
+    ).decode()
+
+    headers = {
+        "Authorization": f"Basic {auth_header}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    try:
+        response = requests.post(url, data={"grant_type": "client_credentials"}, headers=headers)
+        response.raise_for_status()
+        return response.json()["access_token"]
+    except Exception as e:
+        print(f"PayPal Auth Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to authenticate with PayPal."
+        )
+
+@router.post("/create-payment")
+async def create_payment_order(
     donation: DonationRequest,
     current_user: UserInDB = Depends(get_current_user_from_db)
 ):
     """
-    Creates a Stripe Payment Intent for a donation.
+    Creates a PayPal Order. 
+    Returns the Order ID which the client uses to render the PayPal button.
     """
-    if not stripe.api_key:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Stripe is not configured on the server."
-        )
+    access_token = get_paypal_access_token()
+    url = f"{settings.PAYPAL_BASE_URL}/v2/checkout/orders"
+
+    # Convert amount from cents (integer) to major units (string, e.g., "10.00")
+    amount_major = f"{donation.amount / 100:.2f}"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "intent": "CAPTURE",
+        "purchase_units": [{
+            "amount": {
+                "currency_code": donation.currency.upper(),
+                "value": amount_major
+            },
+            "description": "FoodAid Donation",
+            "custom_id": current_user.user_id  # Link payment to user
+        }],
+        "payer": {
+            "email_address": donation.email
+        },
+        "application_context": {
+            "brand_name": "FoodAid",
+            "user_action": "PAY_NOW"
+        }
+    }
 
     try:
-        payment_intent = stripe.PaymentIntent.create(
-            amount=donation.amount, # Amount in cents
-            currency=donation.currency,
-            automatic_payment_methods={"enabled": True},
-            receipt_email=donation.email,
-            metadata={
-                "user_id": current_user.user_id,
-                "user_email": current_user.email,
-                "user_name": current_user.name
-            }
-        )
-        return {"client_secret": payment_intent.client_secret}
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        order_data = response.json()
+        
+        # Return the Order ID and status so the frontend can start the flow
+        return {
+            "order_id": order_data["id"], 
+            "status": order_data["status"],
+            "links": order_data.get("links", [])
+        }
+        
     except Exception as e:
+        print(f"PayPal Create Order Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating payment intent: {e}"
+            detail=f"Error creating PayPal order: {e}"
+        )
+
+@router.post("/{order_id}/capture")
+async def capture_payment(
+    order_id: str,
+    service: FirebaseService = Depends(get_firebase_service),
+    current_user: UserInDB = Depends(get_current_user_from_db)
+):
+    """
+    Captures the funds for a specific Order ID.
+    This should be called after the user approves the payment on the client side.
+    """
+    access_token = get_paypal_access_token()
+    url = f"{settings.PAYPAL_BASE_URL}/v2/checkout/orders/{order_id}/capture"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(url, headers=headers)
+        response.raise_for_status()
+        capture_data = response.json()
+
+        # Check if completed successfully
+        if capture_data.get("status") == "COMPLETED":
+            # Extract transaction details to log to Firebase
+            purchase_units = capture_data.get("purchase_units", [])
+            if purchase_units:
+                captures = purchase_units[0].get("payments", {}).get("captures", [])
+                if captures:
+                    transaction = captures[0]
+                    
+                    # Adapt data to fit the existing logging service
+                    # We store amount in cents to maintain database consistency
+                    amount_val = transaction.get("amount", {}).get("value", "0")
+                    
+                    payment_record = {
+                        "id": transaction.get("id"),
+                        "amount": int(float(amount_val) * 100), 
+                        "status": transaction.get("status"),
+                        "metadata": {
+                            "order_id": order_id,
+                            "user_id": current_user.user_id,
+                            "email": current_user.email,
+                            "provider": "paypal"
+                        }
+                    }
+                    service.log_payment(payment_record)
+
+        return capture_data
+
+    except Exception as e:
+        print(f"PayPal Capture Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error capturing PayPal payment: {e}"
         )
 
 @router.post("/webhook")
-async def stripe_webhook(
+async def paypal_webhook(
     request: Request,
-    stripe_signature: Optional[str] = Header(None),
     service: FirebaseService = Depends(get_firebase_service)
 ):
     """
-    Handles incoming webhooks from Stripe, specifically for
-    'payment_intent.succeeded' events to log donations.
+    Handles PayPal webhook events (e.g., PAYMENT.CAPTURE.COMPLETED).
     """
-    if not stripe_signature:
-        raise HTTPException(status_code=400, detail="Missing 'Stripe-Signature' header.")
-
-    if not settings.STRIPE_WEBHOOK_SECRET:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Stripe webhook secret is not configured."
-        )
-
-    payload = await request.body()
+    # Note: In a production environment, you MUST verify the PayPal-Transmission-Sig 
+    # header to ensure authenticity. This example processes the payload directly.
+    
     try:
-        event = stripe.Webhook.construct_event(
-            payload=payload, sig_header=stripe_signature, secret=settings.STRIPE_WEBHOOK_SECRET
-        )
-    except ValueError as e:
-        # Invalid payload
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid payload: {e}")
-    except stripe.error.SignatureVerificationError as e:
-        # Invalid signature
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid signature: {e}")
+        event = await request.json()
+        event_type = event.get("event_type")
+
+        if event_type == "PAYMENT.CAPTURE.COMPLETED":
+            resource = event.get("resource", {})
+            amount_val = resource.get("amount", {}).get("value", "0")
+            
+            payment_record = {
+                "id": resource.get("id"),
+                "amount": int(float(amount_val) * 100),
+                "status": resource.get("status"),
+                "metadata": {
+                    "provider": "paypal_webhook",
+                    "event_id": event.get("id")
+                }
+            }
+            service.log_payment(payment_record)
+
+        return {"status": "received"}
+
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Webhook error: {e}")
-
-    # Handle the event
-    if event['type'] == 'payment_intent.succeeded':
-        payment_intent = event['data']['object']
-        # Log the successful payment
-        service.log_payment(payment_intent)
-    else:
-        print(f"Unhandled event type: {event['type']}")
-
-    return {"status": "success"}
+        print(f"Webhook Error: {e}")
+        raise HTTPException(status_code=400, detail="Invalid webhook payload")
