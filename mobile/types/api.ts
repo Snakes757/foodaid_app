@@ -1,4 +1,3 @@
-// Enums matching backend app/schemas.py
 export enum PostStatus {
   AVAILABLE = "Available",
   RESERVED = "Reserved",
@@ -26,15 +25,13 @@ export enum VerificationStatus {
   REJECTED = "Rejected",
 }
 
-// Interfaces matching backend Pydantic models
-
 export interface Coordinates {
   lat: number;
   lng: number;
 }
 
 export interface User {
-  user_id: string; // Matches 'user_id' in UserPublic/UserInDB
+  user_id: string;
   email: string;
   role: Role;
   name: string;
@@ -47,7 +44,15 @@ export interface User {
 
 export interface RegisterData {
   email: string;
-  password: string; // Required for backend registration
+  password: string;
+  role: Role;
+  name: string;
+  address: string;
+  phone_number?: string;
+}
+
+export interface UserCreateGoogle {
+  email: string;
   role: Role;
   name: string;
   address: string;
@@ -64,18 +69,18 @@ export interface FoodPostResponse {
   title: string;
   description?: string;
   quantity: string;
-  address: string; // Backend uses 'address', not 'location' in FoodPostBase
-  expiry: string; // ISO string
+  address: string;
+  expiry: string;
   status: PostStatus;
   created_at: string;
   donor_id: string;
   coordinates: Coordinates;
-  
+
   receiver_id?: string;
   reserved_at?: string;
   delivery_method?: DeliveryMethod;
-  distance_km?: number; // Added by backend logic
-  donor_details?: User; // Embedded donor details
+  distance_km?: number;
+  donor_details?: User;
 }
 
 export interface FoodPostCreate {
@@ -83,7 +88,7 @@ export interface FoodPostCreate {
   description?: string;
   quantity: string;
   address: string;
-  expiry: string; // ISO Datetime string
+  expiry: string;
   image_url?: string;
 }
 

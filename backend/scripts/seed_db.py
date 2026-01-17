@@ -1,120 +1,247 @@
 import sys
 import os
 import datetime
-import firebase_admin
-from firebase_admin import firestore
+import random
+from firebase_admin import auth
 
-# Add the parent directory to sys.path to allow imports from app
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Ensure the app module is importable
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import from your app
-try:
-    from app.config import get_db
-    from app.schemas import UserRole, PostStatus, VerificationStatus
-except ImportError as e:
-    print(f"Error importing app modules: {e}")
-    print("Make sure you are running this script from the root 'backend' folder or 'backend/scripts'.")
-    sys.exit(1)
+from app.config import db, get_auth
+from app.schemas import (
+    UserRole, VerificationStatus, PostStatus, DeliveryMethod, Coordinates
+)
+from app.services.firebase_service import FirebaseService
 
-def seed_database():
-    print("🌱 Initializing Firestore Database Seeding...")
-    
-    # 1. Initialize DB Connection
-    try:
-        db = get_db()
-        print("✅ Connected to Firestore.")
-    except Exception as e:
-        print(f"❌ Failed to connect to Firestore. Check your .env and Service Account Key.\nError: {e}")
+def seed_data():
+    """
+    Seeds the Firestore database and Firebase Auth with mock data.
+    """
+    if not db:
+        print("[ERROR] Database not initialized. Check your .env file and credentials.")
         return
 
-    # --- SEED USERS ---
-    print("\nCreating 'users' collection...")
-    users_ref = db.collection('users')
-
-    # Sample Donor
-    donor_id = "sample_donor_001"
-    donor_data = {
-        "user_id": donor_id,
-        "email": "donor@example.com",
-        "role": UserRole.DONOR.value,
-        "name": "Sunshine Bakery",
-        "address": "123 Pretorius St, Pretoria",
-        "phone_number": "+27123456789",
-        "verification_status": VerificationStatus.APPROVED.value,
-        "created_at": datetime.datetime.now(datetime.timezone.utc),
-        "coordinates": {"lat": -25.7479, "lng": 28.2293}, 
-        "fcm_token": None,
-        "verification_document_url": None
-    }
-    users_ref.document(donor_id).set(donor_data)
-    print(f"   - Added Donor: {donor_data['name']}")
-
-    # Sample Receiver (NGO)
-    receiver_id = "sample_receiver_001"
-    receiver_data = {
-        "user_id": receiver_id,
-        "email": "ngo@example.com",
-        "role": UserRole.RECEIVER.value,
-        "name": "Hope Shelter",
-        "address": "456 Francis Baard St, Pretoria",
-        "phone_number": "+27987654321",
-        "verification_status": VerificationStatus.APPROVED.value,
-        "created_at": datetime.datetime.now(datetime.timezone.utc),
-        "coordinates": {"lat": -25.7460, "lng": 28.2100},
-        "fcm_token": None,
-        "verification_document_url": None
-    }
-    users_ref.document(receiver_id).set(receiver_data)
-    print(f"   - Added Receiver: {receiver_data['name']}")
-
-    # --- SEED FOOD POSTS ---
-    print("\nCreating 'foodPosts' collection...")
-    posts_ref = db.collection('foodPosts')
+    print("🌱 Starting Database Seed/Migration...")
     
-    post_id = "sample_post_001"
-    post_data = {
-        "post_id": post_id,
-        "donor_id": donor_id,
-        "title": "Surplus Bread Loaves",
-        "description": "20 loaves of brown bread baked this morning.",
-        "quantity": "20 Loaves",
-        "address": "123 Pretorius St, Pretoria",
-        "expiry": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2),
-        "status": PostStatus.AVAILABLE.value,
-        "created_at": datetime.datetime.now(datetime.timezone.utc),
-        "coordinates": {"lat": -25.7479, "lng": 28.2293},
-        "image_url": "https://placehold.co/600x400/orange/white?text=Bread",
-        "donor_details": { # Cache donor details
-            "name": donor_data['name'],
-            "role": donor_data['role'],
-            "email": donor_data['email'],
-            "user_id": donor_data['user_id'],
-            "address": donor_data['address'],
-            "verification_status": donor_data['verification_status'],
-            "coordinates": donor_data['coordinates']
+    service = FirebaseService()
+    
+    # --- 1. MOCK USERS ---
+    mock_users = [
+        {
+            "email": "admin@foodaid.com",
+            "password": "password123",
+            "name": "Super Admin",
+            "role": UserRole.ADMIN,
+            "verification_status": VerificationStatus.APPROVED,
+            "phone_number": "+27110000000",
+            "address": "1 Admin Way, Tech City",
+            "coordinates": {"lat": -26.2041, "lng": 28.0473} # JHB
+        },
+        {
+            "email": "donor@foodaid.com",
+            "password": "password123",
+            "name": "Joe's Bakery",
+            "role": UserRole.DONOR,
+            "verification_status": VerificationStatus.APPROVED,
+            "phone_number": "+27111111111",
+            "address": "12 Baker Street, Rosebank",
+            "coordinates": {"lat": -26.1450, "lng": 28.0400} # Rosebank
+        },
+        {
+            "email": "receiver@foodaid.com",
+            "password": "password123",
+            "name": "Hope Shelter",
+            "role": UserRole.RECEIVER,
+            "verification_status": VerificationStatus.APPROVED,
+            "phone_number": "+27112222222",
+            "address": "45 Charity Lane, Soweto",
+            "coordinates": {"lat": -26.2350, "lng": 27.9100} # Soweto
+        },
+        {
+            "email": "driver@foodaid.com",
+            "password": "password123",
+            "name": "Fast Logistics",
+            "role": UserRole.LOGISTICS,
+            "verification_status": VerificationStatus.APPROVED,
+            "phone_number": "+27113333333",
+            "address": "88 Transport Rd, Midrand",
+            "coordinates": {"lat": -26.0100, "lng": 28.1200} # Midrand
+        },
+        {
+            "email": "newuser@foodaid.com",
+            "password": "password123",
+            "name": "Pending NGO",
+            "role": UserRole.RECEIVER,
+            "verification_status": VerificationStatus.PENDING,
+            "phone_number": "+27114444444",
+            "address": "99 Waiting List Blvd",
+            "coordinates": None
         }
-    }
-    posts_ref.document(post_id).set(post_data)
-    print(f"   - Added Post: {post_data['title']}")
+    ]
 
-    # --- SEED RESERVATIONS (Empty for now) ---
-    print("\nCreating 'reservations' collection (adding dummy doc then deleting to initialize)...")
-    # Note: Collections don't strictly need initialization, but this verifies permission
-    reservations_ref = db.collection('reservations')
-    dummy_res_ref = reservations_ref.document('init_check')
-    dummy_res_ref.set({"status": "check"})
-    dummy_res_ref.delete()
-    print("   - Verified 'reservations' access.")
+    user_ids = {}
 
-    # --- SEED DONATIONS (Empty for now) ---
-    print("\nCreating 'donations' collection...")
-    donations_ref = db.collection('donations')
-    dummy_don_ref = donations_ref.document('init_check')
-    dummy_don_ref.set({"status": "check"})
-    dummy_don_ref.delete()
-    print("   - Verified 'donations' access.")
+    print("\n--- Seeding Users ---")
+    for user_data in mock_users:
+        email = user_data["email"]
+        try:
+            # 1. Create or Get User in Firebase Auth
+            try:
+                user_record = auth.get_user_by_email(email)
+                print(f"  Existing Auth User found: {email}")
+            except auth.UserNotFoundError:
+                user_record = auth.create_user(
+                    email=email,
+                    password=user_data["password"],
+                    display_name=user_data["name"],
+                    phone_number=None # Skipping phone auth for mock
+                )
+                print(f"  Created Auth User: {email}")
 
-    print("\n✨ Database seeding completed successfully!")
+            uid = user_record.uid
+            user_ids[user_data["role"]] = uid
+
+            # 2. Create or Update User Profile in Firestore
+            # We construct the dictionary manually to match UserInDB schema requirements
+            firestore_data = {
+                "user_id": uid,
+                "email": email,
+                "role": user_data["role"].value,
+                "name": user_data["name"],
+                "address": user_data["address"],
+                "phone_number": user_data["phone_number"],
+                "verification_status": user_data["verification_status"].value,
+                "created_at": datetime.datetime.now(datetime.timezone.utc),
+                "fcm_token": None,
+                "coordinates": user_data["coordinates"]
+            }
+            
+            # Using set(..., merge=True) acts like an 'upsert' migration
+            db.collection('users').document(uid).set(firestore_data, merge=True)
+            print(f"  -> Synced Firestore Profile: {user_data['name']}")
+
+        except Exception as e:
+            print(f"  [FAILED] Could not process {email}: {e}")
+
+    # --- 2. MOCK FOOD POSTS ---
+    print("\n--- Seeding Food Posts ---")
+    
+    donor_id = user_ids.get(UserRole.DONOR)
+    receiver_id = user_ids.get(UserRole.RECEIVER)
+    driver_id = user_ids.get(UserRole.LOGISTICS)
+
+    if not donor_id:
+        print("Skipping posts: No donor created.")
+        return
+
+    # Define mock posts
+    now = datetime.datetime.now(datetime.timezone.utc)
+    future = now + datetime.timedelta(days=7)
+
+    mock_posts = [
+        {
+            "title": "50 Loaves of Sourdough",
+            "description": "Freshly baked sourdough from yesterday. Still good for consumption.",
+            "quantity": "50 Loaves",
+            "address": "12 Baker Street, Rosebank",
+            "expiry": future,
+            "status": PostStatus.AVAILABLE,
+            "coordinates": {"lat": -26.1450, "lng": 28.0400},
+            "donor_id": donor_id,
+            "donor_details": {
+                "user_id": donor_id,
+                "name": "Joe's Bakery", 
+                "email": "donor@foodaid.com",
+                "role": "Donor",
+                "address": "12 Baker Street, Rosebank",
+                "verification_status": "Approved"
+            }
+        },
+        {
+            "title": "Canned Beans & Veg",
+            "description": "Box of mixed canned goods. Dented cans but sealed.",
+            "quantity": "2 Boxes",
+            "address": "12 Baker Street, Rosebank",
+            "expiry": future,
+            "status": PostStatus.RESERVED,
+            "coordinates": {"lat": -26.1450, "lng": 28.0400},
+            "donor_id": donor_id,
+            "receiver_id": receiver_id,
+            "reserved_at": now,
+            "delivery_method": DeliveryMethod.DELIVERY, # Needs pickup
+            "donor_details": {
+                "user_id": donor_id,
+                "name": "Joe's Bakery",
+                "email": "donor@foodaid.com",
+                "role": "Donor",
+                "address": "12 Baker Street, Rosebank",
+                "verification_status": "Approved"
+            }
+        },
+        {
+            "title": "Surplus Wedding Catering",
+            "description": "Cooked rice and stew. Kept refrigerated.",
+            "quantity": "20kg",
+            "address": "12 Baker Street, Rosebank",
+            "expiry": now + datetime.timedelta(hours=24),
+            "status": PostStatus.IN_TRANSIT,
+            "coordinates": {"lat": -26.1450, "lng": 28.0400},
+            "donor_id": donor_id,
+            "receiver_id": receiver_id,
+            "logistics_id": driver_id,
+            "reserved_at": now,
+            "picked_up_at": now,
+            "delivery_method": DeliveryMethod.DELIVERY,
+            "donor_details": {
+                "user_id": donor_id,
+                "name": "Joe's Bakery",
+                "email": "donor@foodaid.com",
+                "role": "Donor",
+                "address": "12 Baker Street, Rosebank",
+                "verification_status": "Approved"
+            }
+        }
+    ]
+
+    for post in mock_posts:
+        # Check if a similar post exists to avoid infinite duplicates on re-runs
+        # (Simple check based on title and donor)
+        existing_query = db.collection('foodPosts')\
+            .where("donor_id", "==", donor_id)\
+            .where("title", "==", post["title"])\
+            .limit(1).stream()
+        
+        if any(existing_query):
+            print(f"  Skipping existing post: {post['title']}")
+            continue
+
+        # Add new post
+        # Clean dict to ensure dates are standard Python datetimes (Firestore handles them)
+        try:
+            doc_ref = db.collection('foodPosts').document()
+            doc_ref.set(post)
+            print(f"  -> Created Post: {post['title']} [{post['status'].value}]")
+            
+            # If reserved, also create a reservation record for consistency
+            if post.get("status") in [PostStatus.RESERVED, PostStatus.IN_TRANSIT]:
+                db.collection('reservations').add({
+                    "post_id": doc_ref.id,
+                    "receiver_id": post.get("receiver_id"),
+                    "donor_id": post.get("donor_id"),
+                    "timestamp": now,
+                    "status": "Active",
+                    "delivery_method": post.get("delivery_method")
+                })
+                print(f"     + Linked Reservation Record")
+
+        except Exception as e:
+            print(f"  [FAILED] Create post {post['title']}: {e}")
+
+    print("\n Seed Complete! You can now log in with:")
+    print("   Donor: donor@foodaid.com / password123")
+    print("   Receiver: receiver@foodaid.com / password123")
+    print("   Driver: driver@foodaid.com / password123")
+    print("   Admin: admin@foodaid.com / password123")
 
 if __name__ == "__main__":
-    seed_database()
+    seed_data()

@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import { Stack, SplashScreen } from 'expo-router';
 import { AuthProvider } from '@/hooks/useAuth';
+import "../global.css";
 
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();

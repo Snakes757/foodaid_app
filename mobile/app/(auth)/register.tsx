@@ -1,31 +1,72 @@
-import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  ActivityIndicator, 
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
   Alert,
   ScrollView,
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
 import { useRouter, Link } from 'expo-router';
-import { registerUser } from '@/api/auth';
+import { registerUser, getUserProfile } from '@/api/auth';
 import { Role } from '@/types/api';
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { auth } from '@/config/firebase';
+import { useAuth } from '@/hooks/useAuth';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { refreshProfile } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
-  
+
+  // Google Auth
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: '563755773205-k42e64mrl7m2e0055f5u8reu92ndm6m6.apps.googleusercontent.com',
+    iosClientId: 'YOUR_IOS_CLIENT_ID',
+    androidClientId: 'YOUR_ANDROID_CLIENT_ID',
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      handleGoogleSignUp(credential);
+    }
+  }, [response]);
+
+  const handleGoogleSignUp = async (credential: any) => {
+    try {
+      setIsLoading(true);
+      await signInWithCredential(auth, credential);
+      
+      try {
+        await getUserProfile();
+        await refreshProfile();
+      } catch (error) {
+        // Profile doesn't exist, go to completion
+        router.push('./complete-profile');
+      }
+    } catch (error: any) {
+      setIsLoading(false);
+      Alert.alert("Google Error", error.message);
+    }
+  };
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     phone_number: '',
     address: '',
-    role: Role.DONOR // Default role
+    role: Role.DONOR
   });
 
   const updateField = (field: string, value: string) => {
@@ -42,7 +83,7 @@ export default function RegisterScreen() {
       setIsLoading(true);
       await registerUser(formData);
       Alert.alert(
-        'Success', 
+        'Success',
         'Account created successfully! Please log in.',
         [{ text: 'OK', onPress: () => router.push('/login') }]
       );
@@ -55,18 +96,18 @@ export default function RegisterScreen() {
   };
 
   const renderRoleButton = (role: Role, icon: keyof typeof Ionicons.glyphMap, label: string) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       onPress={() => updateField('role', role)}
       className={`flex-1 p-3 rounded-xl border items-center justify-center mr-2 ${
-        formData.role === role 
-          ? 'bg-orange-50 border-orange-500' 
+        formData.role === role
+          ? 'bg-orange-50 border-orange-500'
           : 'bg-white border-gray-200'
       }`}
     >
-      <Ionicons 
-        name={icon} 
-        size={24} 
-        color={formData.role === role ? '#EA580C' : '#6B7280'} 
+      <Ionicons
+        name={icon}
+        size={24}
+        color={formData.role === role ? '#EA580C' : '#6B7280'}
       />
       <Text className={`mt-1 font-medium ${
         formData.role === role ? 'text-orange-700' : 'text-gray-500'
@@ -77,7 +118,7 @@ export default function RegisterScreen() {
   );
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       className="flex-1 bg-white"
     >
@@ -155,7 +196,7 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             className="bg-green-600 py-4 rounded-xl items-center mt-4 shadow-sm"
             onPress={handleRegister}
             disabled={isLoading}
@@ -167,7 +208,22 @@ export default function RegisterScreen() {
             )}
           </TouchableOpacity>
 
-          <View className="flex-row justify-center mt-4 mb-8">
+          <View className="flex-row items-center my-4">
+             <View className="flex-1 h-px bg-gray-200" />
+             <Text className="mx-4 text-gray-400">OR</Text>
+             <View className="flex-1 h-px bg-gray-200" />
+          </View>
+
+          <TouchableOpacity
+            className="flex-row items-center justify-center bg-white border border-gray-300 py-4 rounded-xl shadow-sm mb-4"
+            onPress={() => promptAsync()}
+            disabled={!request || isLoading}
+          >
+            <Ionicons name="logo-google" size={20} color="black" style={{ marginRight: 10 }} />
+            <Text className="text-gray-700 font-bold text-lg">Sign up with Google</Text>
+          </TouchableOpacity>
+
+          <View className="flex-row justify-center mt-2 mb-8">
             <Text className="text-gray-500">Already a member? </Text>
             <Link href="/login" asChild>
               <TouchableOpacity>

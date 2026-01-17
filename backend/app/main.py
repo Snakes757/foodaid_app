@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -30,14 +30,20 @@ app.add_middleware(
 )
 
 # --- Register Routers ---
-app.include_router(auth.router, prefix="/auth", tags=["Authentication & Users"])
-app.include_router(posts.router, prefix="/posts", tags=["Food Posts"])
-app.include_router(reservations.router, prefix="/reservations", tags=["Reservations"])
-app.include_router(logistics.router, prefix="/logistics", tags=["Logistics & Delivery"])
-app.include_router(admin.router, prefix="/admin", tags=["Admin Control"])
-app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
-app.include_router(payments.router, prefix="/payments", tags=["Donations & Payments"])
+api_v1 = APIRouter(prefix="/api/v1")
+api_v1.include_router(auth.router, prefix="/auth", tags=["Authentication & Users"])
+api_v1.include_router(posts.router, prefix="/posts", tags=["Food Posts"])
+api_v1.include_router(reservations.router, prefix="/reservations", tags=["Reservations"])
+api_v1.include_router(logistics.router, prefix="/logistics", tags=["Logistics & Delivery"])
+api_v1.include_router(admin.router, prefix="/admin", tags=["Admin Control"])
+api_v1.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+api_v1.include_router(payments.router, prefix="/payments", tags=["Donations & Payments"])
 
+app.include_router(api_v1)
+
+@app.get("/ping")
+def ping():
+    return {"status": "ok", "message": "FastAPI is reachable"}
 
 @app.get("/", tags=["Root"])
 async def read_root():

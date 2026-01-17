@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { User } from '@/types/api';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { auth } from '@/app/config/firebase';
+import { auth } from '@/config/firebase';
 import { getUserProfile } from '@/api/auth';
 import { SplashScreen } from 'expo-router';
 

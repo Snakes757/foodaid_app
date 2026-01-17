@@ -42,6 +42,10 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6, description="User's password (min 6 characters).")
 
+class UserCreateGoogle(UserBase):
+    """Schema for creating a user profile via Google Auth (no password needed)."""
+    pass
+
 class UserInDB(UserBase):
     user_id: str = Field(..., description="Firebase Auth UID.")
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
@@ -76,7 +80,7 @@ class FoodPostBase(BaseModel):
     address: str = Field(..., description="Pickup address for the food.")
     expiry: datetime.datetime = Field(..., description="Expiry date and time of the food item.")
     image_url: Optional[str] = Field(None, description="URL of the uploaded food post image.")
-    
+
     model_config = ConfigDict(extra='ignore')
 
 class FoodPostCreate(FoodPostBase):
@@ -89,12 +93,10 @@ class FoodPostInDB(FoodPostBase):
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
     coordinates: Coordinates = Field(..., description="Geocoded location of the pickup address.")
 
-    # Reservation/Delivery Details
     receiver_id: Optional[str] = Field(None, description="User ID of the receiver, if reserved.")
     reserved_at: Optional[datetime.datetime] = Field(None, description="Timestamp when the post was reserved.")
     delivery_method: Optional[DeliveryMethod] = Field(None, description="Chosen method: Pickup or Delivery.")
-    
-    # Logistics Details
+
     logistics_id: Optional[str] = Field(None, description="User ID of the logistics driver.")
     picked_up_at: Optional[datetime.datetime] = Field(None, description="When driver picked up the food.")
     delivered_at: Optional[datetime.datetime] = Field(None, description="When driver delivered the food.")

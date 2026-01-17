@@ -38,6 +38,8 @@ yarn-error.*
 
 app-example
 
+config/firebase.js
+
 # generated native folders
 /ios
 /android

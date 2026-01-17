@@ -5,6 +5,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from google.cloud.firestore import Client
 from typing import Optional
+from pathlib import Path
 
 load_dotenv()
 
@@ -41,26 +42,29 @@ class Settings(BaseSettings):
 settings = Settings()
 db: Optional[Client] = None
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+# --- Firebase Initialization Logic ---
 try:
     key_path = settings.FIREBASE_SERVICE_ACCOUNT_KEY
-    if key_path:
-        if os.path.exists(key_path):
-            cred = credentials.Certificate(key_path)
-            try:
-                firebase_admin.get_app()
-            except ValueError:
-                firebase_admin.initialize_app(cred)
 
-            db = firestore.client()
-            print("Firebase Admin SDK initialized successfully.")
-        else:
-            print(f"Error: Firebase key file not found at path: {key_path}")
-            db = None
-    else:
-        print("Warning: FIREBASE_SERVICE_ACCOUNT_KEY is not set in .env. Firebase Admin SDK not initialized.")
+    if not key_path:
+        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_KEY not set in .env")
+
+    cred_path = BASE_DIR / key_path
+
+    if not cred_path.exists():
+        raise FileNotFoundError(f"Firebase key not found at: {cred_path}")
+
+    cred = credentials.Certificate(str(cred_path))
+
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+
+    db = firestore.client()
 
 except Exception as e:
-    print(f"An unexpected error occurred during Firebase initialization: {e}")
+    print(f"[FIREBASE INIT ERROR] {e}")
     db = None
 
 def get_db() -> Client:
