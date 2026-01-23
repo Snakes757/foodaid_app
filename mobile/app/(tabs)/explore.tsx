@@ -1,33 +1,48 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
   Linking,
-  ActivityIndicator 
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { getAvailablePosts } from '@/api/posts';
 import { FoodPostResponse } from '@/types/api';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 
-/**
- * Explore Screen
- * Allows users to find donations nearby.
- * Uses external linking to Google Maps for production reliability 
- * without needing 'react-native-maps' configuration immediately.
- */
 export default function ExploreScreen() {
   const [posts, setPosts] = useState<FoodPostResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
 
   useEffect(() => {
-    loadPosts();
+    loadData();
   }, []);
 
-  const loadPosts = async () => {
+  const loadData = async () => {
+    setIsLoading(true);
     try {
-      const data = await getAvailablePosts();
+      // 1. Get Location First
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      let currentLat = undefined;
+      let currentLng = undefined;
+
+      if (status === 'granted') {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          setLocation(loc);
+          currentLat = loc.coords.latitude;
+          currentLng = loc.coords.longitude;
+        } catch (locErr) {
+          console.log("Could not fetch location:", locErr);
+        }
+      }
+
+      // 2. Fetch Posts with Coordinates (if available)
+      const data = await getAvailablePosts(currentLat, currentLng);
       setPosts(data);
     } catch (e) {
       console.error(e);
@@ -37,8 +52,8 @@ export default function ExploreScreen() {
   };
 
   const openInMaps = (address: string) => {
-    // Universal link for maps
-    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+    // Use directions mode
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
     Linking.openURL(url);
   };
 
@@ -46,6 +61,7 @@ export default function ExploreScreen() {
     return (
       <View className="flex-1 justify-center items-center bg-white">
         <ActivityIndicator size="large" color="#166534" />
+        <Text className="text-gray-400 mt-2 text-sm">Finding nearby food...</Text>
       </View>
     );
   }
@@ -61,28 +77,42 @@ export default function ExploreScreen() {
         data={posts}
         keyExtractor={(item) => item.post_id}
         contentContainerStyle={{ padding: 16 }}
+        refreshing={isLoading}
+        onRefresh={loadData}
         renderItem={({ item }) => (
-          <View className="flex-row bg-white p-4 rounded-xl mb-3 items-center shadow-sm">
+          <View className="flex-row bg-white p-4 rounded-xl mb-3 items-center shadow-sm border border-gray-100">
             <View className="bg-orange-100 p-3 rounded-full mr-4">
               <Ionicons name="location" size={24} color="#EA580C" />
             </View>
             <View className="flex-1">
-              <Text className="font-bold text-gray-800">{item.title}</Text>
-              <Text className="text-gray-600 text-sm" numberOfLines={1}>{item.address}</Text>
-              <Text className="text-green-600 text-xs font-medium mt-1">
-                {item.quantity} • {item.distance_km ? `${item.distance_km.toFixed(1)}km` : 'Distance unavailable'}
-              </Text>
+              <Text className="font-bold text-gray-800 text-lg">{item.title}</Text>
+              <Text className="text-gray-600 text-sm mb-1" numberOfLines={1}>{item.address}</Text>
+              <View className="flex-row items-center">
+                <View className="bg-green-100 px-2 py-0.5 rounded mr-2">
+                   <Text className="text-green-800 text-xs font-bold">{item.quantity}</Text>
+                </View>
+                <Text className="text-gray-400 text-xs font-medium">
+                  {item.distance_km !== undefined && item.distance_km !== null
+                    ? `• ${item.distance_km.toFixed(1)} km away` 
+                    : '• Distance unavailable'}
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => openInMaps(item.address)}
-              className="bg-gray-100 p-2 rounded-lg"
+              className="bg-gray-50 p-2 rounded-lg border border-gray-200"
             >
-              <Ionicons name="navigate-circle" size={28} color="#166534" />
+              <Ionicons name="navigate" size={24} color="#166534" />
             </TouchableOpacity>
           </View>
         )}
         ListEmptyComponent={
-          <Text className="text-center text-gray-500 mt-10">No locations found.</Text>
+          <View className="items-center justify-center mt-10">
+             <Text className="text-gray-500">No locations found.</Text>
+             <TouchableOpacity onPress={loadData} className="mt-4">
+                <Text className="text-blue-600">Retry</Text>
+             </TouchableOpacity>
+          </View>
         }
       />
     </View>

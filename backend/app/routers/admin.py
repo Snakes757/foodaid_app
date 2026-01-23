@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 
-from app.schemas import UserPublic, VerificationUpdate, UserInDB
+from app.schemas import UserPublic, VerificationUpdate, UserInDB, UserPublicWithBank
 from app.services.firebase_service import FirebaseService
 from app.dependencies import get_current_admin_user, get_firebase_service
 
@@ -12,9 +12,6 @@ async def get_pending_verification_users(
     admin_user: UserInDB = Depends(get_current_admin_user),
     service: FirebaseService = Depends(get_firebase_service)
 ):
-    """
-    Get all users (Donors, Logistics, Receivers) waiting for account approval.
-    """
     try:
         pending_users = service.get_pending_users()
         return [UserPublic.model_validate(user.model_dump()) for user in pending_users]
@@ -24,15 +21,30 @@ async def get_pending_verification_users(
             detail=f"Error fetching pending users: {e}"
         )
 
+@router.get("/users", response_model=List[UserPublicWithBank])
+async def get_all_users(
+    admin_user: UserInDB = Depends(get_current_admin_user),
+    service: FirebaseService = Depends(get_firebase_service)
+):
+    """
+    Returns all users. Includes banking details for admins to view.
+    """
+    try:
+        users = service.get_all_users()
+        # Admin can see banking details, so we use UserPublicWithBank schema
+        return [UserPublicWithBank.model_validate(user.model_dump()) for user in users]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching users: {e}"
+        )
+
 @router.post("/users/verify", response_model=UserPublic)
 async def verify_user(
     update_data: VerificationUpdate,
     admin_user: UserInDB = Depends(get_current_admin_user),
     service: FirebaseService = Depends(get_firebase_service)
 ):
-    """
-    Approve or Reject a user's account. Triggers a push notification to that user.
-    """
     try:
         updated_user = service.update_user_verification_status(
             update_data.user_id,

@@ -1,33 +1,37 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  RefreshControl, 
-  ActivityIndicator, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+  TouchableOpacity,
   Alert,
-  Linking 
+  Linking
 } from 'react-native';
-import { getAvailableDeliveries, acceptDelivery, updateDeliveryStatus } from '@/api/logistics';
+import { getAvailableDeliveries, getMyActiveJobs, acceptDelivery, updateDeliveryStatus } from '@/api/logistics';
 import { FoodPostResponse, PostStatus, Role } from '@/types/api';
 import { useAuth } from '@/hooks/useAuth';
 import { Ionicons } from '@expo/vector-icons';
+import { useAlert } from '@/context/AlertContext';
+import { getErrorMessage } from '@/utils/errorHandler';
 
 export default function LogisticsScreen() {
   const { user } = useAuth();
-  const [jobs, setJobs] = useState<FoodPostResponse[]>([]);
+  const { showAlert } = useAlert();
+  const [activeJobs, setActiveJobs] = useState<FoodPostResponse[]>([]);
+  const [availableJobs, setAvailableJobs] = useState<FoodPostResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Note: Currently the backend only provides "Available" (unassigned) jobs.
-  // A "My Active Jobs" endpoint would be needed to show jobs already accepted by this driver.
-  // For this demo, we focus on finding and accepting new work.
-
-  const fetchJobs = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const data = await getAvailableDeliveries();
-      setJobs(data);
+      const [active, available] = await Promise.all([
+        getMyActiveJobs(),
+        getAvailableDeliveries()
+      ]);
+      setActiveJobs(active);
+      setAvailableJobs(available);
     } catch (err) {
       console.error(err);
     } finally {
@@ -37,8 +41,8 @@ export default function LogisticsScreen() {
   }, []);
 
   useEffect(() => {
-    fetchJobs();
-  }, [fetchJobs]);
+    fetchData();
+  }, [fetchData]);
 
   const handleAccept = async (job: FoodPostResponse) => {
     Alert.alert(
@@ -46,17 +50,41 @@ export default function LogisticsScreen() {
       `Do you want to accept the delivery for "${job.title}"?`,
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Accept Job", 
+        {
+          text: "Accept Job",
           onPress: async () => {
             try {
               await acceptDelivery(job.post_id);
-              Alert.alert("Success", "You have been assigned this delivery.");
-              fetchJobs(); // Refresh list to remove it (since it's no longer 'available')
+              showAlert("Success", "You have been assigned this delivery.", 'success');
+              fetchData();
             } catch (error) {
-              Alert.alert("Error", "Failed to accept job.");
+              showAlert("Error", getErrorMessage(error), 'error');
             }
-          } 
+          }
+        }
+      ]
+    );
+  };
+
+  const handleUpdateStatus = async (job: FoodPostResponse, newStatus: PostStatus.IN_TRANSIT | PostStatus.DELIVERED) => {
+    const action = newStatus === PostStatus.IN_TRANSIT ? "Confirm Pickup" : "Complete Delivery";
+    
+    Alert.alert(
+      action,
+      `Are you sure you want to mark this job as ${newStatus === PostStatus.IN_TRANSIT ? 'picked up' : 'delivered'}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          onPress: async () => {
+            try {
+              await updateDeliveryStatus(job.post_id, newStatus);
+              showAlert("Success", "Job status updated.", 'success');
+              fetchData();
+            } catch (error) {
+              showAlert("Error", getErrorMessage(error), 'error');
+            }
+          }
         }
       ]
     );
@@ -75,12 +103,68 @@ export default function LogisticsScreen() {
     );
   }
 
-  const renderJob = ({ item }: { item: FoodPostResponse }) => (
-    <View className="bg-white rounded-xl mx-4 mb-4 shadow-sm border border-gray-200 overflow-hidden">
+  const renderActiveJob = ({ item }: { item: FoodPostResponse }) => {
+    const isInTransit = item.status === PostStatus.IN_TRANSIT;
+    
+    return (
+      <View className="bg-white rounded-xl mx-4 mb-4 shadow-md border border-green-200 overflow-hidden">
+        <View className={`${isInTransit ? 'bg-orange-600' : 'bg-green-700'} p-3 flex-row justify-between items-center`}>
+          <View className="flex-row items-center">
+            <Ionicons name={isInTransit ? "bicycle" : "clipboard"} size={20} color="white" />
+            <Text className="text-white font-bold ml-2">
+              {isInTransit ? "In Transit" : "Accepted - Pickup Pending"}
+            </Text>
+          </View>
+        </View>
+
+        <View className="p-4">
+          <Text className="text-xl font-bold text-gray-800 mb-1">{item.title}</Text>
+          <Text className="text-gray-500 mb-3">{item.quantity}</Text>
+
+          <View className="flex-row items-start mb-4">
+            <Ionicons name="location" size={20} color="#EA580C" style={{ marginTop: 2 }} />
+            <View className="ml-2 flex-1">
+              <Text className="text-gray-500 text-xs uppercase font-bold">Destination</Text>
+              <Text className="text-gray-800 text-base">{item.address}</Text>
+            </View>
+          </View>
+
+          <View className="flex-row space-x-3 mt-2">
+             <TouchableOpacity
+                onPress={() => openMaps(item.address)}
+                className="flex-1 bg-gray-100 py-3 rounded-lg items-center flex-row justify-center"
+              >
+                <Ionicons name="navigate" size={18} color="#4B5563" />
+                <Text className="text-gray-700 font-bold ml-2">Directions</Text>
+              </TouchableOpacity>
+
+              {item.status === PostStatus.RESERVED ? (
+                 <TouchableOpacity
+                    onPress={() => handleUpdateStatus(item, PostStatus.IN_TRANSIT)}
+                    className="flex-1 bg-orange-600 py-3 rounded-lg items-center"
+                  >
+                    <Text className="text-white font-bold">Confirm Pickup</Text>
+                  </TouchableOpacity>
+              ) : (
+                 <TouchableOpacity
+                    onPress={() => handleUpdateStatus(item, PostStatus.DELIVERED)}
+                    className="flex-1 bg-green-700 py-3 rounded-lg items-center"
+                  >
+                    <Text className="text-white font-bold">Complete Delivery</Text>
+                  </TouchableOpacity>
+              )}
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderAvailableJob = ({ item }: { item: FoodPostResponse }) => (
+    <View className="bg-white rounded-xl mx-4 mb-4 shadow-sm border border-gray-200 overflow-hidden opacity-90">
       <View className="bg-blue-600 p-3 flex-row justify-between items-center">
         <View className="flex-row items-center">
           <Ionicons name="cube" size={20} color="white" />
-          <Text className="text-white font-bold ml-2">Delivery Request</Text>
+          <Text className="text-white font-bold ml-2">New Request</Text>
         </View>
         <Text className="text-blue-100 text-xs bg-blue-700 px-2 py-1 rounded">
           {item.quantity}
@@ -89,36 +173,14 @@ export default function LogisticsScreen() {
 
       <View className="p-4">
         <Text className="text-lg font-bold text-gray-800 mb-1">{item.title}</Text>
-        
-        <View className="flex-row items-start mt-2">
-          <Ionicons name="location" size={16} color="#4B5563" style={{ marginTop: 2 }} />
-          <View className="ml-2 flex-1">
-            <Text className="text-gray-500 text-xs uppercase font-bold">Pickup Location</Text>
-            <Text className="text-gray-800 mb-2">{item.address}</Text>
-          </View>
-        </View>
+        <Text className="text-gray-600 mb-3" numberOfLines={1}>{item.address}</Text>
 
-        {item.donor_details && (
-           <View className="flex-row items-center mb-4 ml-6">
-             <Text className="text-gray-500 text-sm">Donor: {item.donor_details.name}</Text>
-           </View>
-        )}
-
-        <View className="flex-row space-x-3 mt-2 border-t border-gray-100 pt-3">
-          <TouchableOpacity 
-            onPress={() => openMaps(item.address)}
-            className="flex-1 bg-gray-100 py-3 rounded-lg items-center"
-          >
-            <Text className="text-gray-700 font-bold">Map</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            onPress={() => handleAccept(item)}
-            className="flex-1 bg-blue-600 py-3 rounded-lg items-center shadow-sm"
-          >
-            <Text className="text-white font-bold">Accept Job</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          onPress={() => handleAccept(item)}
+          className="w-full bg-blue-600 py-3 rounded-lg items-center shadow-sm"
+        >
+          <Text className="text-white font-bold">Accept Job</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -126,8 +188,7 @@ export default function LogisticsScreen() {
   return (
     <View className="flex-1 bg-gray-50">
       <View className="p-4 bg-white border-b border-gray-200">
-        <Text className="text-xl font-bold text-blue-900">Available Jobs</Text>
-        <Text className="text-gray-500 text-sm">Select a delivery to start.</Text>
+        <Text className="text-xl font-bold text-blue-900">Driver Dashboard</Text>
       </View>
 
       {isLoading ? (
@@ -136,19 +197,24 @@ export default function LogisticsScreen() {
         </View>
       ) : (
         <FlatList
-          data={jobs}
+          data={[...activeJobs, ...availableJobs]}
           keyExtractor={(item) => item.post_id}
-          renderItem={renderJob}
+          renderItem={({ item }) => {
+             const isActive = activeJobs.some(j => j.post_id === item.post_id);
+             return isActive ? renderActiveJob({ item }) : renderAvailableJob({ item });
+          }}
           contentContainerStyle={{ paddingTop: 16, paddingBottom: 20 }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchJobs(); }} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />
           }
-          ListEmptyComponent={
-            <View className="items-center justify-center mt-20 px-6">
-              <Ionicons name="checkmark-circle-outline" size={64} color="#D1D5DB" />
-              <Text className="text-gray-500 text-center mt-4 text-lg">All caught up!</Text>
-              <Text className="text-gray-400 text-center mt-1">No pending deliveries found nearby.</Text>
-            </View>
+          ListHeaderComponent={
+             (activeJobs.length === 0 && availableJobs.length === 0) ? (
+                <View className="items-center justify-center mt-20 px-6">
+                  <Ionicons name="checkmark-circle-outline" size={64} color="#D1D5DB" />
+                  <Text className="text-gray-500 text-center mt-4 text-lg">All caught up!</Text>
+                  <Text className="text-gray-400 text-center mt-1">No pending deliveries found nearby.</Text>
+                </View>
+             ) : null
           }
         />
       )}

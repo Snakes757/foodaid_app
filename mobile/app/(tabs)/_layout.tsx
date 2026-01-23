@@ -1,18 +1,15 @@
 import React from 'react';
 import { Tabs, Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
+import { useNotifications } from '@/context/NotificationContext';
 import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Role } from '@/types/api';
 
-/**
- * Navigation Bar Layout
- * Implements role-based tabs:
- * Donor: Home, Explore, Create, Messages, Menu
- * Receiver: Home, Explore, Reservations, Messages, Menu
- */
 export default function TabsLayout() {
   const { user, isLoading } = useAuth();
+  // Get the unread count from the context
+  const { unreadCount } = useNotifications();
 
   if (isLoading) {
     return (
@@ -30,9 +27,9 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: true,
-        headerTintColor: '#166534', // green-800
-        tabBarActiveTintColor: '#EA580C', // orange-600
-        tabBarInactiveTintColor: '#6B7280', // gray-500
+        headerTintColor: '#166534',
+        tabBarActiveTintColor: '#EA580C',
+        tabBarInactiveTintColor: '#6B7280',
         tabBarStyle: {
           backgroundColor: 'white',
           borderTopWidth: 1,
@@ -42,7 +39,7 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* Home / Feed - Available for all */}
+      {/* Home Tab */}
       <Tabs.Screen
         name="feed"
         options={{
@@ -51,16 +48,16 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Explore / Map - Available for all */}
+      {/* Explore Tab */}
       <Tabs.Screen
-        name="explore" // Needs to be created
+        name="explore"
         options={{
           title: 'Explore',
           tabBarIcon: ({ color, size }) => <Ionicons name="map" size={size} color={color} />,
         }}
       />
 
-      {/* Create Post - Donor Only */}
+      {/* Create Post (Donors Only) */}
       <Tabs.Screen
         name="create"
         options={{
@@ -70,7 +67,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Reserved Posts - Receiver Only */}
+      {/* Reservations (Receivers Only) */}
       <Tabs.Screen
         name="reservations"
         options={{
@@ -80,35 +77,48 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Logistics Dashboard - Driver Only (Replaces Feed/Reservations ideally, but keeping simple for now) */}
+      {/* Logistics Jobs (Logistics Only) */}
       <Tabs.Screen
-        name="logistics" // Needs to be created
+        name="logistics"
         options={{
           title: 'Jobs',
           href: user.role === Role.LOGISTICS ? '/logistics' : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="bicycle" size={size} color={color} />,
         }}
       />
+      
+      {/* Admin Users (Admin Only) */}
+      <Tabs.Screen
+        name="users"
+        options={{
+          title: 'Users',
+          href: user.role === Role.ADMIN ? '/users' : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+        }}
+      />
 
-      {/* My Posts - Donor Only (Hidden from main bar, accessed via Menu usually, but here for now) */}
+      {/* Hidden: My Posts (Accessed via Menu) */}
       <Tabs.Screen
         name="posts"
         options={{
           title: 'My Posts',
-          href: null, // Hidden from tab bar, accessed via Profile? Or keep if needed.
+          href: null,
         }}
       />
 
-      {/* Messages - All */}
+      {/* Messages Tab with Dynamic Badge */}
       <Tabs.Screen
-        name="messages" // Needs to be created
+        name="messages"
         options={{
           title: 'Messages',
+          // Show badge only if count > 0
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#DC2626', color: 'white', fontSize: 10 },
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color} />,
         }}
       />
 
-      {/* Menu / Profile - All */}
+      {/* Profile/Menu Tab */}
       <Tabs.Screen
         name="profile"
         options={{

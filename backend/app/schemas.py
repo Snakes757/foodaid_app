@@ -30,6 +30,12 @@ class Coordinates(BaseModel):
     lat: float = Field(..., description="Latitude.")
     lng: float = Field(..., description="Longitude.")
 
+class BankingDetails(BaseModel):
+    bank_name: str = Field(..., description="Name of the bank.")
+    account_number: str = Field(..., description="Bank account number.")
+    branch_code: str = Field(..., description="Branch code.")
+    account_holder: str = Field(..., description="Name of the account holder.")
+
 class UserBase(BaseModel):
     email: EmailStr = Field(..., description="User's email address.")
     role: UserRole = Field(..., description="User's role (Donor, Receiver, or Admin).")
@@ -41,10 +47,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6, description="User's password (min 6 characters).")
-
-class UserCreateGoogle(UserBase):
-    """Schema for creating a user profile via Google Auth (no password needed)."""
-    pass
+    verification_document_url: Optional[str] = Field(None, description="URL of the uploaded verification document.")
 
 class UserInDB(UserBase):
     user_id: str = Field(..., description="Firebase Auth UID.")
@@ -54,11 +57,16 @@ class UserInDB(UserBase):
     fcm_token: Optional[str] = Field(None, description="Firebase Cloud Messaging token for push notifications.")
     verification_document_url: Optional[str] = Field(None, description="URL to uploaded verification document (for Donors/Receivers).")
     verification_rejection_reason: Optional[str] = Field(None, description="Reason for rejection, if applicable.")
+    banking_details: Optional[BankingDetails] = Field(None, description="Banking details for Receivers (NGOs).")
 
 class UserPublic(UserBase):
     user_id: str = Field(..., description="Firebase Auth UID.")
     coordinates: Optional[Coordinates] = Field(None, description="Geocoded location.")
     verification_status: VerificationStatus = Field(..., description="Admin verification status.")
+    verification_document_url: Optional[str] = Field(None, description="URL to uploaded verification document.")
+
+class UserPublicWithBank(UserPublic):
+    banking_details: Optional[BankingDetails] = Field(None, description="Visible to Admin and Owner.")
 
 class TokenData(BaseModel):
     user_id: str = Field(..., alias="uid")
@@ -124,6 +132,16 @@ class DonationRequest(BaseModel):
     amount: int = Field(..., gt=0, description="Donation amount in cents.")
     currency: str = Field(default="usd", description="Currency code (e.g., 'usd', 'zar').")
     email: EmailStr = Field(..., description="Donor's email for receipt.")
+
+class DisbursementRequest(BaseModel):
+    receiver_id: str = Field(..., description="The NGO User ID to receive funds.")
+    amount: int = Field(..., gt=0, description="Amount to disburse in cents.")
+    reference: str = Field(..., description="Payment reference.")
+
+class SystemBalance(BaseModel):
+    total_donated: int = Field(..., description="Total amount donated by donors (cents).")
+    total_disbursed: int = Field(..., description="Total amount disbursed to NGOs (cents).")
+    current_balance: int = Field(..., description="Available balance (cents).")
 
 class NotificationBase(BaseModel):
     title: str

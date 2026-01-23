@@ -6,13 +6,18 @@ export const getAvailableDeliveries = async (): Promise<FoodPostResponse[]> => {
   return data;
 };
 
+export const getMyActiveJobs = async (): Promise<FoodPostResponse[]> => {
+  const { data } = await client.get<FoodPostResponse[]>('/logistics/active');
+  return data;
+};
+
 export const acceptDelivery = async (postId: string): Promise<FoodPostResponse> => {
   const { data } = await client.post<FoodPostResponse>(`/logistics/${postId}/accept`);
   return data;
 };
 
 export const updateDeliveryStatus = async (
-  postId: string, 
+  postId: string,
   status: PostStatus.IN_TRANSIT | PostStatus.DELIVERED
 ): Promise<FoodPostResponse> => {
   const { data } = await client.put<FoodPostResponse>(`/logistics/${postId}/status`, null, {

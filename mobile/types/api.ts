@@ -30,6 +30,13 @@ export interface Coordinates {
   lng: number;
 }
 
+export interface BankingDetails {
+  bank_name: string;
+  account_number: string;
+  branch_code: string;
+  account_holder: string;
+}
+
 export interface User {
   user_id: string;
   email: string;
@@ -40,6 +47,8 @@ export interface User {
   coordinates?: Coordinates | null;
   verification_status: VerificationStatus;
   fcm_token?: string | null;
+  verification_document_url?: string | null;
+  banking_details?: BankingDetails | null;
 }
 
 export interface RegisterData {
@@ -49,14 +58,7 @@ export interface RegisterData {
   name: string;
   address: string;
   phone_number?: string;
-}
-
-export interface UserCreateGoogle {
-  email: string;
-  role: Role;
-  name: string;
-  address: string;
-  phone_number?: string;
+  verification_document_url?: string;
 }
 
 export interface LoginCredentials {
@@ -75,6 +77,7 @@ export interface FoodPostResponse {
   created_at: string;
   donor_id: string;
   coordinates: Coordinates;
+  image_url?: string;
 
   receiver_id?: string;
   reserved_at?: string;
@@ -106,4 +109,22 @@ export interface Reservation {
 
 export interface ReservationRequest {
   delivery_method: DeliveryMethod;
+}
+
+export interface DonationRequest {
+  amount: number;
+  currency: string;
+  email: string;
+}
+
+export interface SystemBalance {
+  total_donated: number;
+  total_disbursed: number;
+  current_balance: number;
+}
+
+export interface DisbursementRequest {
+  receiver_id: string;
+  amount: number;
+  reference: string;
 }

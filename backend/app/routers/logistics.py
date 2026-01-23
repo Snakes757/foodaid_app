@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any, Optional
 import datetime
-from google.cloud.firestore_v1.client import Client
+from google.cloud.firestore import Client, FieldFilter
 
 from app.schemas import FoodPostPublic, UserInDB, UserRole, PostStatus, DeliveryMethod
 from app.config import get_db
@@ -9,6 +9,46 @@ from app.dependencies import get_current_verified_user, get_firebase_service
 from app.services.firebase_service import FirebaseService
 
 router = APIRouter()
+
+@router.get("/active", response_model=List[FoodPostPublic])
+async def get_my_active_jobs(
+    current_user: UserInDB = Depends(get_current_verified_user),
+    db: Client = Depends(get_db),
+    service: FirebaseService = Depends(get_firebase_service)
+):
+    """
+    Fetch jobs accepted by the current driver that are still in progress 
+    (Reserved/Accepted or In Transit).
+    """
+    if current_user.role != UserRole.LOGISTICS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access restricted.")
+
+    try:
+        posts_ref = db.collection('foodPosts')
+        
+        # Fetch jobs assigned to this driver that are not yet Delivered/Expired
+        query = posts_ref.where(filter=FieldFilter("logistics_id", "==", current_user.user_id))\
+                         .where(filter=FieldFilter("status", "in", [PostStatus.RESERVED, PostStatus.IN_TRANSIT]))
+        
+        active_jobs = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            if not data: continue
+            data['post_id'] = doc.id
+            
+            # Populate details
+            if data.get('donor_id'):
+                donor = service.get_user_by_uid(data['donor_id'])
+                if donor:
+                    data['donor_details'] = donor.model_dump()
+
+            active_jobs.append(FoodPostPublic.model_validate(data))
+            
+        return active_jobs
+
+    except Exception as e:
+        print(f"Error fetching active jobs: {e}")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Error fetching active jobs: {e}")
 
 @router.get("/available", response_model=List[FoodPostPublic])
 async def get_available_deliveries(
@@ -23,9 +63,9 @@ async def get_available_deliveries(
     try:
         posts_ref = db.collection('foodPosts')
 
-        query = posts_ref.where("status", "==", PostStatus.RESERVED)\
-                         .where("delivery_method", "==", DeliveryMethod.DELIVERY)\
-                         .where("logistics_id", "==", None)
+        query = posts_ref.where(filter=FieldFilter("status", "==", PostStatus.RESERVED))\
+                         .where(filter=FieldFilter("delivery_method", "==", DeliveryMethod.DELIVERY))\
+                         .where(filter=FieldFilter("logistics_id", "==", None))
 
         deliveries = []
         for doc in query.stream():
@@ -44,6 +84,13 @@ async def get_available_deliveries(
         return deliveries
 
     except Exception as e:
+
+        if "The query requires an index" in str(e):
+             print(f"FIRESTORE INDEX REQUIRED (Logistics): {e}")
+             raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Database index missing for Logistics queries. Check server logs."
+            )
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"Error fetching deliveries: {e}")
 
 @router.post("/{post_id}/accept", response_model=FoodPostPublic)
@@ -80,8 +127,8 @@ async def accept_delivery(
         })
 
         if data.get('receiver_id'):
-            # We already checked 'data' is not None above, so this subscript is safe
-            receiver_id = data['receiver_id'] 
+
+            receiver_id = data['receiver_id']
             receiver = service.get_user_by_uid(receiver_id)
             if receiver:
                 service.send_and_save_notification(
@@ -119,7 +166,7 @@ async def update_delivery_status(
 
     post_ref = db.collection('foodPosts').document(post_id)
     post_doc = post_ref.get()
-    
+
     data = post_doc.to_dict()
     if not data:
          raise HTTPException(status.HTTP_404_NOT_FOUND, "Post not found.")
@@ -127,11 +174,9 @@ async def update_delivery_status(
     if data.get('logistics_id') != current_user.user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You are not the assigned driver for this shipment.")
 
-    # Explicitly type the dictionary to allow mixed types (Enum and Datetime)
     update_data: Dict[str, Any] = {"status": new_status}
     now = datetime.datetime.now(datetime.timezone.utc)
 
-    # Initialize variables to prevent 'possibly unbound' errors
     msg_title: Optional[str] = None
     msg_body: Optional[str] = None
 

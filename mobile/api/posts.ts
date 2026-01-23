@@ -1,34 +1,23 @@
-
 import client from './client';
-import { FoodPostResponse, FoodPostCreate } from '@/types/api';
+import { FoodPostResponse, FoodPostCreate, DeliveryMethod } from '@/types/api';
 
-/**
- * Fetches all "Available" food posts.
- * Corresponds to: GET /api/v1/posts/
- */
-export const getAvailablePosts = async (): Promise<FoodPostResponse[]> => {
-  const { data } = await client.get<FoodPostResponse[]>('/api/v1/posts/');
+export const getAvailablePosts = async (lat?: number, lng?: number): Promise<FoodPostResponse[]> => {
+  const params: any = {};
+  if (lat !== undefined) params.lat = lat;
+  if (lng !== undefined) params.lng = lng;
+
+  const { data } = await client.get<FoodPostResponse[]>('/posts/', { params });
   return data;
 };
 
-/**
- * Creates a new food post.
- * Corresponds to: POST /api/v1/posts/
- */
 export const createNewPost = async (postData: FoodPostCreate): Promise<FoodPostResponse> => {
-  const { data } = await client.post<FoodPostResponse>('/api/v1/posts/', postData);
+  const { data } = await client.post<FoodPostResponse>('/posts/', postData);
   return data;
 };
 
-/**
- * Reserves a food post.
- * Corresponds to: PUT /api/v1/posts/{post_id}/reserve
- */
-export const reservePost = async (postId: string): Promise<FoodPostResponse> => {
-  const { data } = await client.put<FoodPostResponse>(`/api/v1/posts/${postId}/reserve`);
+export const reservePost = async (postId: string, deliveryMethod: DeliveryMethod): Promise<FoodPostResponse> => {
+  const { data } = await client.put<FoodPostResponse>(`/posts/${postId}/reserve`, {
+    delivery_method: deliveryMethod
+  });
   return data;
 };
-
-// TODO: Add functions for:
-// - getMyPosts (for Donors)
-// - getMyReservations (for Receivers)
