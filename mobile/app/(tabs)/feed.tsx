@@ -7,7 +7,8 @@ import {
   RefreshControl,
   TouchableOpacity,
   Image,
-  Alert
+  Modal,
+  TouchableWithoutFeedback
 } from 'react-native';
 import { getAvailablePosts, reservePost } from '@/api/posts';
 import { FoodPostResponse, Role, DeliveryMethod } from '@/types/api';
@@ -23,6 +24,11 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState<FoodPostResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // State for reservation modal
+  const [showReserveModal, setShowReserveModal] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<FoodPostResponse | null>(null);
+
   const router = useRouter();
 
   const fetchPosts = useCallback(async () => {
@@ -46,35 +52,26 @@ export default function FeedScreen() {
     fetchPosts();
   };
 
-  const executeReservation = async (post: FoodPostResponse, method: DeliveryMethod) => {
+  const handleReserveClick = (post: FoodPostResponse) => {
+    if (user?.role !== Role.RECEIVER) return;
+    setSelectedPost(post);
+    setShowReserveModal(true);
+  };
+
+  const confirmReservation = async (method: DeliveryMethod) => {
+    setShowReserveModal(false);
+    if (!selectedPost) return;
+
     try {
-      await reservePost(post.post_id, method);
+      await reservePost(selectedPost.post_id, method);
       showAlert("Success", "Food reserved successfully!", 'success');
       fetchPosts();
       router.push('/reservations');
     } catch (error) {
       showAlert("Error", getErrorMessage(error), 'error');
+    } finally {
+      setSelectedPost(null);
     }
-  };
-
-  const handleReserve = async (post: FoodPostResponse) => {
-    if (user?.role !== Role.RECEIVER) return;
-
-    Alert.alert(
-      "Reserve Food",
-      `How would you like to receive "${post.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "I'll Pick It Up",
-          onPress: () => executeReservation(post, DeliveryMethod.PICKUP)
-        },
-        {
-          text: "Request Delivery",
-          onPress: () => executeReservation(post, DeliveryMethod.DELIVERY)
-        }
-      ]
-    );
   };
 
   const renderItem = ({ item }: { item: FoodPostResponse }) => (
@@ -116,8 +113,8 @@ export default function FeedScreen() {
 
           {user?.role === Role.RECEIVER && (
             <TouchableOpacity
-              onPress={() => handleReserve(item)}
-              className="bg-green-600 px-4 py-2 rounded-full"
+              onPress={() => handleReserveClick(item)}
+              className="bg-green-600 px-4 py-2 rounded-full shadow-sm active:bg-green-700"
             >
               <Text className="text-white font-bold text-sm">Reserve</Text>
             </TouchableOpacity>
@@ -149,7 +146,7 @@ export default function FeedScreen() {
               <Text className="text-gray-500 text-xs">Available Donations</Text>
           </View>
 
-          {/* New Button for Donors to Donate Money */}
+          {/* Button for Donors to Donate Money */}
           {user?.role === Role.DONOR && (
                <TouchableOpacity 
                   onPress={() => router.push('../donate/money')}
@@ -160,7 +157,7 @@ export default function FeedScreen() {
                </TouchableOpacity>
           )}
 
-          {/* New Button for Admin Finance Dashboard */}
+          {/* Button for Admin Finance Dashboard */}
           {user?.role === Role.ADMIN && (
                <TouchableOpacity 
                   onPress={() => router.push('../admin/finance')}
@@ -189,6 +186,68 @@ export default function FeedScreen() {
         }
         contentContainerStyle={{ paddingBottom: 20, paddingTop: 10 }}
       />
+
+      {/* Reservation Custom Modal */}
+      <Modal
+        transparent
+        visible={showReserveModal}
+        animationType="fade"
+        onRequestClose={() => setShowReserveModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center px-6">
+          <TouchableWithoutFeedback onPress={() => setShowReserveModal(false)}>
+            <View className="absolute inset-0" />
+          </TouchableWithoutFeedback>
+          <View className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+            <View className="items-center mb-6">
+              <View className="bg-green-100 p-4 rounded-full mb-3">
+                <Ionicons name="bag-check" size={32} color="#166534" />
+              </View>
+              <Text className="text-xl font-bold text-gray-800 text-center">Reserve Donation</Text>
+              <Text className="text-gray-500 text-center mt-2 text-sm leading-5">
+                How would you like to receive "{selectedPost?.title}"?
+              </Text>
+            </View>
+
+            <View className="space-y-3">
+              <TouchableOpacity
+                onPress={() => confirmReservation(DeliveryMethod.PICKUP)}
+                className="flex-row items-center bg-orange-50 p-4 rounded-xl border border-orange-200 active:bg-orange-100"
+              >
+                <View className="bg-orange-100 p-2 rounded-full mr-3">
+                  <Ionicons name="walk" size={24} color="#EA580C" />
+                </View>
+                <View className="flex-1">
+                  <Text className="font-bold text-orange-900 text-base">I'll Pick It Up</Text>
+                  <Text className="text-orange-700 text-xs mt-0.5">Collect from donor's location</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#EA580C" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => confirmReservation(DeliveryMethod.DELIVERY)}
+                className="flex-row items-center bg-blue-50 p-4 rounded-xl border border-blue-200 active:bg-blue-100"
+              >
+                <View className="bg-blue-100 p-2 rounded-full mr-3">
+                  <Ionicons name="bicycle" size={24} color="#1E40AF" />
+                </View>
+                <View className="flex-1">
+                  <Text className="font-bold text-blue-900 text-base">Request Delivery</Text>
+                  <Text className="text-blue-700 text-xs mt-0.5">A driver will be assigned</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#1E40AF" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setShowReserveModal(false)}
+              className="mt-6 py-3"
+            >
+              <Text className="text-gray-500 font-bold text-center text-base">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

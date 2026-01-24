@@ -28,7 +28,7 @@ class FirebaseService:
                     "lat": coords.latitude,
                     "lng": coords.longitude
                 }
-        
+
         return data
 
     def create_user_in_auth(self, user_create: UserCreate) -> auth.UserRecord:
@@ -58,8 +58,7 @@ class FirebaseService:
                     user_data["coordinates"] = None
             else:
                  user_data["coordinates"] = None
-            
-            # Ensure banking_details is initialized
+
             if "banking_details" not in user_data:
                 user_data["banking_details"] = None
 
@@ -150,7 +149,7 @@ class FirebaseService:
                     u_data['user_id'] = user_doc.id
                     u_data = self._fix_firestore_data(u_data)
                     user = UserInDB.model_validate(u_data)
-                    
+
                     msg_body = f"Your account has been {status.value}."
                     if reason: msg_body += f" Reason: {reason}"
                     self.send_and_save_notification(
@@ -169,7 +168,7 @@ class FirebaseService:
         try:
             users_ref = self.db.collection('users')
             query = users_ref.where(filter=firestore.FieldFilter("role", "==", "Admin"))
-            
+
             for doc in query.stream():
                 admin_data = doc.to_dict()
                 admin_id = doc.id
@@ -187,15 +186,37 @@ class FirebaseService:
         except Exception as e:
             print(f"Error notifying admins: {e}")
 
+    def notify_admins_of_deletion(self, user: UserInDB, reason: str):
+        try:
+            users_ref = self.db.collection('users')
+            query = users_ref.where(filter=firestore.FieldFilter("role", "==", "Admin"))
+            
+            title = "User Account Deleted"
+            body = f"User {user.name} ({user.role}) has deleted their account.\nReason: {reason}"
+
+            for doc in query.stream():
+                admin_data = doc.to_dict()
+                admin_id = doc.id
+                admin_fcm = admin_data.get("fcm_token")
+
+                self.send_and_save_notification(
+                    user_id=admin_id,
+                    title=title,
+                    body=body,
+                    fcm_token=admin_fcm
+                )
+        except Exception as e:
+            print(f"Error notifying admins of deletion: {e}")
+
     def notify_nearby_users_of_new_post(self, post_data: dict, radius_km: float = 20.0):
         try:
             if not post_data.get('coordinates'):
                 return
-            
+
             post_coords = Coordinates(**post_data['coordinates'])
             users_ref = self.db.collection('users')
             query = users_ref.where(filter=firestore.FieldFilter("verification_status", "==", "Approved"))
-            
+
             tokens_to_notify = []
 
             for doc in query.stream():
@@ -216,18 +237,18 @@ class FirebaseService:
                     continue
 
                 dist = self.maps_service.calculate_distance_km(post_coords, user_coords)
-                
+
                 if dist <= radius_km:
                     if u_data.get('fcm_token'):
                         tokens_to_notify.append(u_data['fcm_token'])
-                    
+
                     self.save_notification(
                         user_id=doc.id,
                         title="New Food Donation Nearby!",
                         body=f"{post_data.get('title')} is available {dist:.1f}km away.",
                         data={"post_id": post_data.get('post_id')}
                     )
-            
+
             if tokens_to_notify:
                 self.send_multicast_push_notification(
                     title="New Food Donation Nearby!",
@@ -245,11 +266,10 @@ class FirebaseService:
 
             post_coords = Coordinates(**post_data['coordinates'])
             users_ref = self.db.collection('users')
-            
-            # Find Logistics users
+
             query = users_ref.where(filter=firestore.FieldFilter("role", "==", "Logistics"))\
                              .where(filter=firestore.FieldFilter("verification_status", "==", "Approved"))
-            
+
             tokens_to_notify = []
 
             for doc in query.stream():
@@ -275,7 +295,7 @@ class FirebaseService:
                         body=f"Pickup required: {post_data.get('title')} ({dist:.1f}km away)",
                         data={"post_id": post_data.get('post_id'), "type": "job_alert"}
                     )
-                    
+
                     if u_data.get('fcm_token'):
                         tokens_to_notify.append(u_data['fcm_token'])
 
@@ -342,8 +362,7 @@ class FirebaseService:
                 "created_at": datetime.datetime.now(datetime.timezone.utc),
                 "metadata": payment_intent.get("metadata", {})
             })
-            
-            # Notify admins
+
             try:
                 users_ref = self.db.collection('users')
                 query = users_ref.where(filter=firestore.FieldFilter("role", "==", "Admin"))
@@ -385,7 +404,7 @@ class FirebaseService:
         except Exception as e:
             print(f"Error calculating disbursements: {e}")
             return 0
-            
+
     def record_disbursement(self, admin_id: str, receiver_id: str, amount: int, reference: str) -> bool:
         try:
             self.db.collection('disbursements').add({
@@ -395,8 +414,7 @@ class FirebaseService:
                 "reference": reference,
                 "created_at": datetime.datetime.now(datetime.timezone.utc)
             })
-            
-            # Notify Receiver
+
             receiver = self.get_user_by_uid(receiver_id)
             if receiver:
                  self.send_and_save_notification(
@@ -405,7 +423,7 @@ class FirebaseService:
                     body=f"We have disbursed {amount/100:.2f} to your bank account. Ref: {reference}",
                     fcm_token=receiver.fcm_token
                 )
-            
+
             return True
         except Exception as e:
             print(f"Error recording disbursement: {e}")
@@ -415,7 +433,7 @@ class FirebaseService:
         try:
             # Delete from Firestore
             self.db.collection('users').document(user_id).delete()
-            
+
             try:
                 # Delete from Firebase Auth
                 self.auth.delete_user(user_id)
@@ -423,7 +441,7 @@ class FirebaseService:
                 print(f"User {user_id} not found in Auth, skipping auth deletion.")
             except Exception as auth_error:
                 print(f"Error deleting user from Auth: {auth_error}")
-            
+
             return True
         except Exception as e:
             print(f"Error deleting user: {e}")

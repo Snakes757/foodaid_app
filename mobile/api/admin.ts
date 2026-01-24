@@ -15,6 +15,10 @@ export const verifyUser = async (userId: string, status: VerificationStatus, rea
   return data;
 };
 
+export const deleteUser = async (userId: string): Promise<void> => {
+  await client.delete(`/admin/users/${userId}`);
+};
+
 // --- NEW FINANCE ENDPOINTS ---
 
 export const getSystemBalance = async (): Promise<SystemBalance> => {

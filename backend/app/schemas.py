@@ -49,6 +49,9 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=6, description="User's password (min 6 characters).")
     verification_document_url: Optional[str] = Field(None, description="URL of the uploaded verification document.")
 
+class UserDeleteRequest(BaseModel):
+    reason: str = Field(..., description="Reason for deleting the account.")
+
 class UserInDB(UserBase):
     user_id: str = Field(..., description="Firebase Auth UID.")
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)

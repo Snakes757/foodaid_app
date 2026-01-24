@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from app.schemas import (
     UserCreate, UserPublic, UserInDB, FCMTokenUpdate,
     VerificationStatus, Coordinates, TokenData,
-    UserPublicWithBank, BankingDetails, UserRole
+    UserPublicWithBank, BankingDetails, UserRole, UserDeleteRequest
 )
 from app.services.firebase_service import FirebaseService
 from app.dependencies import get_firebase_service, get_current_user_from_db, get_current_user_data
@@ -119,3 +119,28 @@ async def update_fcm_token(
     if not success:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update notification settings.")
     return
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_own_account(
+    delete_request: UserDeleteRequest,
+    current_user: UserInDB = Depends(get_current_user_from_db),
+    service: FirebaseService = Depends(get_firebase_service)
+):
+    """
+    Allows a user to delete their own account.
+    Notifications are sent to admins with the reason.
+    """
+    try:
+        # 1. Notify Admins
+        service.notify_admins_of_deletion(current_user, delete_request.reason)
+        
+        # 2. Delete User Data & Auth
+        success = service.delete_user(current_user.user_id)
+        
+        if not success:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to process account deletion.")
+            
+        return
+    except Exception as e:
+        print(f"Self-deletion error: {e}")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error processing request: {e}")

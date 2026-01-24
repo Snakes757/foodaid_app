@@ -5,7 +5,7 @@ import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from "react-native";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBNn5LIoDMD8dqujqy_fgLC1hqXPh0JYFI",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: "foodaid-9d265.firebaseapp.com",
   projectId: "foodaid-9d265",
   storageBucket: "foodaid-9d265.firebasestorage.app",

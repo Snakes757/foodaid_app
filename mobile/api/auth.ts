@@ -42,3 +42,9 @@ export const resetPassword = async (email: string) => {
     throw error;
   }
 };
+
+export const deleteMyAccount = async (reason: string): Promise<void> => {
+  await client.delete('/auth/me', {
+    data: { reason }
+  });
+};

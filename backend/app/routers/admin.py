@@ -26,9 +26,6 @@ async def get_all_users(
     admin_user: UserInDB = Depends(get_current_admin_user),
     service: FirebaseService = Depends(get_firebase_service)
 ):
-    """
-    Returns all users. Includes banking details for admins to view.
-    """
     try:
         users = service.get_all_users()
         # Admin can see banking details, so we use UserPublicWithBank schema
@@ -65,4 +62,33 @@ async def verify_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating user verification: {e}"
+        )
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_account(
+    user_id: str,
+    admin_user: UserInDB = Depends(get_current_admin_user),
+    service: FirebaseService = Depends(get_firebase_service)
+):
+    """
+    Deletes a user from Firestore and Firebase Authentication.
+    """
+    if user_id == admin_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="You cannot delete your own admin account."
+        )
+
+    try:
+        success = service.delete_user(user_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Failed to delete user."
+            )
+        return
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting user: {e}"
         )

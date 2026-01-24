@@ -11,7 +11,7 @@ import {
   Image,
   Dimensions
 } from 'react-native';
-import { getAllUsers, verifyUser } from '@/api/admin';
+import { getAllUsers, verifyUser, deleteUser } from '@/api/admin';
 import { User, Role, VerificationStatus } from '@/types/api';
 import { useAuth } from '@/hooks/useAuth';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,9 +65,33 @@ export default function UsersScreen() {
     );
   };
 
+  const handleDelete = (selectedUser: User) => {
+    Alert.alert(
+      "Delete User",
+      `Are you sure you want to PERMANENTLY delete ${selectedUser.name}? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteUser(selectedUser.user_id);
+              showAlert("Success", "User deleted successfully.", 'success');
+              fetchUsers();
+            } catch (error) {
+              showAlert("Error", getErrorMessage(error), 'error');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const renderUser = ({ item }: { item: User }) => {
-    // Only Donors and Receivers need to show documents
+    // Only Donors and Receivers typically have verification documents
     const requiresDocument = item.role === Role.DONOR || item.role === Role.RECEIVER;
+    const isSelf = user?.user_id === item.user_id;
 
     return (
       <View className="bg-white rounded-xl mx-4 mb-3 p-4 shadow-sm border border-gray-100">
@@ -78,14 +102,14 @@ export default function UsersScreen() {
                   item.role === Role.DONOR ? 'bg-orange-100' :
                   item.role === Role.RECEIVER ? 'bg-green-100' : 'bg-blue-100'
               }`}>
-                   <Ionicons 
-                      name={item.role === Role.ADMIN ? 'shield' : 'person'} 
-                      size={20} 
+                   <Ionicons
+                      name={item.role === Role.ADMIN ? 'shield' : 'person'}
+                      size={20}
                       color={
                           item.role === Role.ADMIN ? '#7E22CE' :
                           item.role === Role.DONOR ? '#EA580C' :
                           item.role === Role.RECEIVER ? '#166534' : '#2563EB'
-                      } 
+                      }
                    />
               </View>
               <View>
@@ -93,17 +117,29 @@ export default function UsersScreen() {
                   <Text className="text-gray-500 text-xs">{item.role}</Text>
               </View>
           </View>
-          
-          <View className={`px-2 py-1 rounded-md ${
-              item.verification_status === VerificationStatus.APPROVED ? 'bg-green-100' :
-              item.verification_status === VerificationStatus.PENDING ? 'bg-yellow-100' : 'bg-red-100'
-          }`}>
-              <Text className={`text-xs font-bold ${
-                   item.verification_status === VerificationStatus.APPROVED ? 'text-green-800' :
-                   item.verification_status === VerificationStatus.PENDING ? 'text-yellow-800' : 'text-red-800'
-              }`}>
-                  {item.verification_status}
-              </Text>
+
+          <View className="flex-row items-center">
+            <View className={`px-2 py-1 rounded-md mr-2 ${
+                item.verification_status === VerificationStatus.APPROVED ? 'bg-green-100' :
+                item.verification_status === VerificationStatus.PENDING ? 'bg-yellow-100' : 'bg-red-100'
+            }`}>
+                <Text className={`text-xs font-bold ${
+                    item.verification_status === VerificationStatus.APPROVED ? 'text-green-800' :
+                    item.verification_status === VerificationStatus.PENDING ? 'text-yellow-800' : 'text-red-800'
+                }`}>
+                    {item.verification_status}
+                </Text>
+            </View>
+            
+            {/* Delete Button (Hidden for self) */}
+            {!isSelf && (
+              <TouchableOpacity 
+                onPress={() => handleDelete(item)}
+                className="bg-red-50 p-2 rounded-lg"
+              >
+                <Ionicons name="trash-outline" size={18} color="#DC2626" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -111,8 +147,8 @@ export default function UsersScreen() {
           <Text className="text-gray-600 text-sm mb-1">📧 {item.email}</Text>
           <Text className="text-gray-600 text-sm">📍 {item.address || "No address"}</Text>
         </View>
-        
-        {/* Document Viewer Section */}
+
+        {/* Verification Document Button */}
         {requiresDocument && (
           <View className="mb-3">
             {item.verification_document_url ? (
@@ -132,15 +168,16 @@ export default function UsersScreen() {
           </View>
         )}
 
+        {/* Action Buttons for Pending Users */}
         {item.verification_status === VerificationStatus.PENDING && (
             <View className="flex-row space-x-3 mt-2 pt-3 border-t border-gray-100">
-               <TouchableOpacity 
+               <TouchableOpacity
                   onPress={() => handleVerify(item, VerificationStatus.APPROVED)}
                   className="flex-1 bg-green-600 py-2 rounded-lg items-center"
                >
                   <Text className="text-white font-bold">Approve</Text>
                </TouchableOpacity>
-               <TouchableOpacity 
+               <TouchableOpacity
                   onPress={() => handleVerify(item, VerificationStatus.REJECTED)}
                   className="flex-1 bg-red-100 py-2 rounded-lg items-center"
                >
@@ -188,20 +225,20 @@ export default function UsersScreen() {
           }
         />
       )}
-      
-      {/* Document Viewer Modal */}
+
+      {/* Document Modal */}
       <Modal visible={!!selectedDocUrl} transparent={true} animationType="fade">
           <View className="flex-1 bg-black/90 justify-center items-center relative">
-             <TouchableOpacity 
+             <TouchableOpacity
                onPress={() => setSelectedDocUrl(null)}
                className="absolute top-12 right-6 z-10 p-2 bg-black/50 rounded-full"
              >
                  <Ionicons name="close" size={32} color="white" />
              </TouchableOpacity>
-             
+
              {selectedDocUrl && (
-                 <Image 
-                    source={{ uri: selectedDocUrl }} 
+                 <Image
+                    source={{ uri: selectedDocUrl }}
                     style={{ width: Dimensions.get('window').width, height: '80%' }}
                     resizeMode="contain"
                  />
